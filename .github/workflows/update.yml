@@ -1,0 +1,27 @@
+name: Update Live Score
+on:
+  schedule:
+    - cron: '*/5 * * * *' # Script akan jalan setiap 5 menit
+  workflow_dispatch: # Memungkinkan kamu menjalankan script secara manual
+
+jobs:
+  update-score:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tarik kode dari repository
+        uses: actions/checkout@v3
+
+      - name: Siapkan mesin Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Instal alat bantu (Axios & Firebase)
+        run: npm install
+
+      - name: Jalankan eksekusi data
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: node index.js
