@@ -31,8 +31,10 @@ async function updateScores() {
             liveScoresData[match.fixture.id] = {
                 league: match.league.name,
                 home_team: match.teams.home.name,
+                home_logo: match.teams.home.logo, // Menarik URL Logo Tim Kandang
                 home_goals: match.goals.home !== null ? match.goals.home : 0,
                 away_team: match.teams.away.name,
+                away_logo: match.teams.away.logo, // Menarik URL Logo Tim Tandang
                 away_goals: match.goals.away !== null ? match.goals.away : 0,
                 status: match.fixture.status.short,
                 elapsed: match.fixture.status.elapsed,
@@ -41,7 +43,7 @@ async function updateScores() {
         });
 
         await db.ref("live_matches").set(liveScoresData);
-        console.log(`Berhasil update ${matches.length} pertandingan ke Firebase.`);
+        console.log(`Berhasil update ${matches.length} pertandingan beserta logo ke Firebase.`);
         process.exit(0);
     } catch (error) {
         console.error("Gagal:", error);
