@@ -26,7 +26,7 @@ async function fetchDailyFixtures() {
             const status = match.fixture.status.short;
             
             const matchObj = {
-                league: match.league.name,
+                league: match.league.country + " - " + match.league.name,
                 home_team: match.teams.home.name,
                 home_logo: match.teams.home.logo,
                 home_goals: match.goals.home !== null ? match.goals.home : 0,
