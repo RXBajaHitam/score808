@@ -10,10 +10,18 @@ const db = admin.database();
 
 async function fetchDailyFixtures() {
     try {
-        console.log("Menarik data jadwal harian...");
-        const today = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
+        console.log("Menarik data jadwal dan hasil 7 hari terakhir...");
         
-        const response = await axios.get(`https://v3.football.api-sports.io/fixtures?date=${today}`, {
+        // Kalkulasi rentang tanggal
+        const todayObj = new Date();
+        const today = todayObj.toISOString().split('T')[0]; // Format YYYY-MM-DD untuk hari ini
+        
+        const pastDateObj = new Date();
+        pastDateObj.setDate(todayObj.getDate() - 7);
+        const past7Days = pastDateObj.toISOString().split('T')[0]; // Format YYYY-MM-DD untuk H-7
+        
+        // Memanggil API dengan rentang dari H-7 sampai hari ini
+        const response = await axios.get(`https://v3.football.api-sports.io/fixtures?from=${past7Days}&to=${today}`, {
             headers: { 'x-apisports-key': process.env.API_FOOTBALL_KEY }
         });
 
@@ -53,7 +61,7 @@ async function fetchDailyFixtures() {
         console.log(`Sukses: ${Object.keys(upcomingData).length} Upcoming, ${Object.keys(finishedData).length} Finished.`);
         process.exit(0);
     } catch (error) {
-        console.error("Gagal menarik jadwal harian:", error);
+        console.error("Gagal menarik data jadwal/hasil:", error);
         process.exit(1);
     }
 }
