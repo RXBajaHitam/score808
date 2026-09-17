@@ -20,12 +20,34 @@ async function fetchDailyFixtures() {
         pastDateObj.setDate(todayObj.getDate() - 7);
         const past7Days = pastDateObj.toISOString().split('T')[0]; // Format YYYY-MM-DD untuk H-7
         
-        // Memanggil API dengan rentang dari H-7 sampai hari ini
-        const response = await axios.get(`https://v3.football.api-sports.io/fixtures?from=${past7Days}&to=${today}`, {
-            headers: { 'x-apisports-key': process.env.API_FOOTBALL_KEY }
+        // Memanggil API dengan parameter lengkap
+        const response = await axios.get(`https://v3.football.api-sports.io/fixtures`, {
+            headers: { 
+                'x-apisports-key': process.env.API_FOOTBALL_KEY 
+            },
+            params: {
+                from: past7Days,
+                to: today,
+                league: 39,      // Testing: Hanya tarik English Premier League
+                season: 2024,    // Wajib diisi jika menggunakan filter 'league'
+                timezone: 'Asia/Jakarta'
+            }
         });
 
+        // CEK PESAN ERROR TERSEMBUNYI DARI API-SPORTS
+        if (response.data.errors && Object.keys(response.data.errors).length > 0) {
+            console.error("API-SPORTS ERROR DETECTED:");
+            console.error(response.data.errors);
+            console.error("Script dihentikan agar tidak menghapus data Firebase dengan data kosong.");
+            process.exit(1); // Exit code 1 membuat GitHub Actions mendeteksi ini sebagai "Failed"
+        }
+
         const matches = response.data.response;
+        
+        if (!matches || matches.length === 0) {
+            console.warn("Tidak ada error, tapi API mengembalikan array kosong (0 pertandingan).");
+        }
+
         const upcomingData = {};
         const finishedData = {};
 
@@ -45,7 +67,7 @@ async function fetchDailyFixtures() {
                 timestamp: match.fixture.timestamp 
             };
 
-            // NS = Not Started, TBD = To Be Defined
+            // NS = Not Started, TBD = To Be Defined, PST = Postponed
             if (['NS', 'TBD', 'PST'].includes(status)) {
                 upcomingData[fixtureId] = matchObj;
             } 
@@ -58,10 +80,13 @@ async function fetchDailyFixtures() {
         await db.ref("upcoming_matches").set(upcomingData);
         await db.ref("finished_matches").set(finishedData);
         
-        console.log(`Sukses: ${Object.keys(upcomingData).length} Upcoming, ${Object.keys(finishedData).length} Finished.`);
+        console.log(`Sukses menyimpan ke Firebase: ${Object.keys(upcomingData).length} Upcoming, ${Object.keys(finishedData).length} Finished.`);
         process.exit(0);
     } catch (error) {
-        console.error("Gagal menarik data jadwal/hasil:", error);
+        console.error("Gagal menarik data jadwal/hasil:", error.message);
+        if (error.response) {
+            console.error("Detail Error API:", error.response.data);
+        }
         process.exit(1);
     }
 }
