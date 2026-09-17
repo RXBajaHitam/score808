@@ -28,8 +28,6 @@ async function fetchDailyFixtures() {
             params: {
                 from: past7Days,
                 to: today,
-                league: 39,      // Testing: Hanya tarik English Premier League
-                season: 2024,    // Wajib diisi jika menggunakan filter 'league'
                 timezone: 'Asia/Jakarta'
             }
         });
