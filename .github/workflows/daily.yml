@@ -1,7 +1,7 @@
 name: Update Daily Fixtures
 on:
   schedule:
-    - cron: '0 */6 * * *' # Berjalan setiap 6 jam
+    - cron: '0 0,12 * * *' # Berjalan setiap 6 jam
   workflow_dispatch:
 
 jobs:
