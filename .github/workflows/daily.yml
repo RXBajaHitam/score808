@@ -1,20 +1,90 @@
-name: Update Daily Fixtures
-on:
-  schedule:
-    - cron: '0 0,12 * * *' # Berjalan setiap 6 jam
-  workflow_dispatch:
+const admin = require('firebase-admin');
+const axios = require('axios');
 
-jobs:
-  update-daily:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      - run: npm install
-      - env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
-          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-        run: node daily.js
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: process.env.FIREBASE_DB_URL
+});
+const db = admin.database();
+
+async function fetchDailyFixtures() {
+    try {
+        console.log("Menarik data jadwal dan hasil 7 hari terakhir (SEMUA LIGA GLOBAL)...");
+        
+        const upcomingData = {};
+        const finishedData = {};
+
+        // Melakukan perulangan (loop) dari hari ini (i=0) mundur sampai 7 hari lalu (i=7)
+        for (let i = 0; i <= 7; i++) {
+            const targetDateObj = new Date();
+            targetDateObj.setDate(targetDateObj.getDate() - i);
+            const dateStr = targetDateObj.toISOString().split('T')[0]; // Format YYYY-MM-DD
+            
+            console.log(`[+] Mengambil data pertandingan seluruh dunia untuk tanggal: ${dateStr}`);
+            
+            const response = await axios.get(`https://v3.football.api-sports.io/fixtures`, {
+                headers: { 
+                    'x-apisports-key': process.env.API_FOOTBALL_KEY 
+                },
+                params: {
+                    date: dateStr, // Gunakan 'date' bukan 'from/to'
+                    timezone: 'Asia/Jakarta'
+                }
+            });
+
+            // Cek jika ada error di tanggal ini
+            if (response.data.errors && Object.keys(response.data.errors).length > 0) {
+                console.error(`[-] API Error pada tanggal ${dateStr}:`, response.data.errors);
+                continue; // Lanjut ke tanggal berikutnya meskipun hari ini error
+            }
+
+            const matches = response.data.response || [];
+            console.log(`    -> Ditemukan ${matches.length} pertandingan.`);
+
+            matches.forEach(match => {
+                const fixtureId = match.fixture.id;
+                const status = match.fixture.status.short;
+                
+                const matchObj = {
+                    league: match.league.country + " - " + match.league.name,
+                    home_team: match.teams.home.name,
+                    home_logo: match.teams.home.logo,
+                    home_goals: match.goals.home !== null ? match.goals.home : 0,
+                    away_team: match.teams.away.name,
+                    away_logo: match.teams.away.logo,
+                    away_goals: match.goals.away !== null ? match.goals.away : 0,
+                    status: status,
+                    timestamp: match.fixture.timestamp 
+                };
+
+                // Filter status
+                if (['NS', 'TBD', 'PST'].includes(status)) {
+                    upcomingData[fixtureId] = matchObj;
+                } 
+                else if (['FT', 'AET', 'PEN'].includes(status)) {
+                    finishedData[fixtureId] = matchObj;
+                }
+            });
+            
+            // Jeda 1 detik setiap selesai 1 hari untuk menghindari Rate Limit blokir dari API
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        // Simpan ke Firebase
+        console.log("Menyimpan ke Firebase Realtime Database...");
+        await db.ref("upcoming_matches").set(upcomingData);
+        await db.ref("finished_matches").set(finishedData);
+        
+        console.log(`Sukses Total: ${Object.keys(upcomingData).length} Upcoming, ${Object.keys(finishedData).length} Finished.`);
+        process.exit(0);
+    } catch (error) {
+        console.error("Gagal menarik data jadwal/hasil:", error.message);
+        if (error.response) {
+            console.error("Detail Error API:", error.response.data);
+        }
+        process.exit(1);
+    }
+}
+
+fetchDailyFixtures();
