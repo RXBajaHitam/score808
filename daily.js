@@ -10,79 +10,63 @@ const db = admin.database();
 
 async function fetchDailyFixtures() {
     try {
-        console.log("Menarik data jadwal dan hasil 7 hari terakhir (SEMUA LIGA GLOBAL)...");
+        const todayObj = new Date();
+        const today = todayObj.toISOString().split('T')[0];
+        const pastDateObj = new Date();
+        pastDateObj.setDate(todayObj.getDate() - 7);
+        const past7Days = pastDateObj.toISOString().split('T')[0];
         
+        // 2021 adalah ID kompetisi untuk Premier League di football-data.org (setara dengan league=39 di API-Sports)
+        // Gunakan dateFrom dan dateTo sebagai format parameter filter tanggal
+        const response = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${past7Days}&dateTo=${today}&competitions=2021`, {
+            headers: { 'X-Auth-Token': process.env.API_FOOTBALL_KEY }
+        });
+
+        const matches = response.data.matches;
+        if (!matches || matches.length === 0) {
+            console.log("Tidak ada jadwal/hasil yang didapat dari range waktu tersebut.");
+            return process.exit(0);
+        }
+
         const upcomingData = {};
         const finishedData = {};
 
-        // Melakukan perulangan (loop) dari hari ini (i=0) mundur sampai 7 hari lalu (i=7)
-        for (let i = 0; i <= 7; i++) {
-            const targetDateObj = new Date();
-            targetDateObj.setDate(targetDateObj.getDate() - i);
-            const dateStr = targetDateObj.toISOString().split('T')[0]; // Menghasilkan format YYYY-MM-DD
+        matches.forEach(match => {
+            const fixtureId = match.id;
+            const status = match.status; 
             
-            console.log(`[+] Mengambil data pertandingan seluruh dunia untuk tanggal: ${dateStr}`);
+            const matchObj = {
+                league: match.competition.name,
+                home_team: match.homeTeam.name,
+                home_goals: (match.score && match.score.fullTime && match.score.fullTime.home !== null) ? match.score.fullTime.home : 0,
+                away_team: match.awayTeam.name,
+                away_goals: (match.score && match.score.fullTime && match.score.fullTime.away !== null) ? match.score.fullTime.away : 0,
+                status: status
+            };
             
-            const response = await axios.get(`https://v3.football.api-sports.io/fixtures`, {
-                headers: { 
-                    'x-apisports-key': process.env.API_FOOTBALL_KEY 
-                },
-                params: {
-                    // KUNCI SUKSES: Hanya gunakan 'date' dan 'timezone', jangan ada 'from' dan 'to'
-                    date: dateStr, 
-                    timezone: 'Asia/Jakarta'
-                }
-            });
-
-            // Cek jika ada error di tanggal ini
-            if (response.data.errors && Object.keys(response.data.errors).length > 0) {
-                console.error(`[-] API Error pada tanggal ${dateStr}:`, response.data.errors);
-                continue; // Lanjut ke tanggal berikutnya meskipun hari ini error
+            // Pengelompokan berdasarkan status terbaru football-data.org
+            if (['SCHEDULED', 'TIMED', 'POSTPONED'].includes(status)) { 
+                upcomingData[fixtureId] = matchObj; 
+            } 
+            else if (['FINISHED', 'AWARDED'].includes(status)) { 
+                finishedData[fixtureId] = matchObj; 
             }
+        });
 
-            const matches = response.data.response || [];
-            console.log(`    -> Ditemukan ${matches.length} pertandingan.`);
-
-            matches.forEach(match => {
-                const fixtureId = match.fixture.id;
-                const status = match.fixture.status.short;
-                
-                const matchObj = {
-                    league: match.league.country + " - " + match.league.name,
-                    home_team: match.teams.home.name,
-                    home_logo: match.teams.home.logo,
-                    home_goals: match.goals.home !== null ? match.goals.home : 0,
-                    away_team: match.teams.away.name,
-                    away_logo: match.teams.away.logo,
-                    away_goals: match.goals.away !== null ? match.goals.away : 0,
-                    status: status,
-                    timestamp: match.fixture.timestamp 
-                };
-
-                // Filter status
-                if (['NS', 'TBD', 'PST'].includes(status)) {
-                    upcomingData[fixtureId] = matchObj;
-                } 
-                else if (['FT', 'AET', 'PEN'].includes(status)) {
-                    finishedData[fixtureId] = matchObj;
-                }
-            });
-            
-            // Jeda 1 detik setiap selesai 1 hari untuk menghindari Rate Limit blokir dari API
-            await new Promise(resolve => setTimeout(resolve, 1000));
+        if (Object.keys(upcomingData).length > 0) {
+            await db.ref("upcoming_matches").update(upcomingData);
+            console.log(`Update ${Object.keys(upcomingData).length} jadwal (upcoming).`);
         }
-
-        // Simpan ke Firebase
-        console.log("Menyimpan ke Firebase Realtime Database...");
-        await db.ref("upcoming_matches").set(upcomingData);
-        await db.ref("finished_matches").set(finishedData);
         
-        console.log(`Sukses Total: ${Object.keys(upcomingData).length} Upcoming, ${Object.keys(finishedData).length} Finished.`);
+        if (Object.keys(finishedData).length > 0) {
+            await db.ref("finished_matches").update(finishedData);
+            console.log(`Update ${Object.keys(finishedData).length} hasil (finished).`);
+        }
+        
         process.exit(0);
     } catch (error) {
-        console.error("Gagal menarik data jadwal/hasil:", error.message);
+        console.error("Error fetching daily fixtures:", error.message);
         process.exit(1);
     }
 }
-
 fetchDailyFixtures();
