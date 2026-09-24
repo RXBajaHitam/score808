@@ -16,15 +16,14 @@ async function fetchDailyFixtures() {
         pastDateObj.setDate(todayObj.getDate() - 7);
         const past7Days = pastDateObj.toISOString().split('T')[0];
         
-        // 2021 adalah ID kompetisi untuk Premier League di football-data.org (setara dengan league=39 di API-Sports)
-        // Gunakan dateFrom dan dateTo sebagai format parameter filter tanggal
-        const response = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${past7Days}&dateTo=${today}&competitions=2021`, {
-            headers: { 'X-Auth-Token': process.env.API_FOOTBALL_KEY }
-        });
+        const response = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${past7Days}&dateTo=${today}`, {
+    headers: { 'X-Auth-Token': process.env.API_FOOTBALL_KEY }
+});
+
 
         const matches = response.data.matches;
         if (!matches || matches.length === 0) {
-            console.log("Tidak ada jadwal/hasil yang didapat dari range waktu tersebut.");
+            console.log("Tidak ada jadwal/hasil.");
             return process.exit(0);
         }
 
@@ -41,10 +40,10 @@ async function fetchDailyFixtures() {
                 home_goals: (match.score && match.score.fullTime && match.score.fullTime.home !== null) ? match.score.fullTime.home : 0,
                 away_team: match.awayTeam.name,
                 away_goals: (match.score && match.score.fullTime && match.score.fullTime.away !== null) ? match.score.fullTime.away : 0,
-                status: status
+                status: status,
+                timestamp: new Date(match.utcDate).getTime() // Fix: Mengirim timestamp dalam format milisecond agar sesuai dengan Kotlin
             };
             
-            // Pengelompokan berdasarkan status terbaru football-data.org
             if (['SCHEDULED', 'TIMED', 'POSTPONED'].includes(status)) { 
                 upcomingData[fixtureId] = matchObj; 
             } 
@@ -53,28 +52,22 @@ async function fetchDailyFixtures() {
             }
         });
 
-        // Menggunakan .set() untuk me-replace seluruh data agar sisa data lama benar-benar tertimpa/terhapus
         if (Object.keys(upcomingData).length > 0) {
             await db.ref("upcoming_matches").set(upcomingData);
-            console.log(`Update ${Object.keys(upcomingData).length} jadwal (upcoming).`);
         } else {
-            // Jika tidak ada data upcoming sama sekali, hapus node upcoming di Firebase
             await db.ref("upcoming_matches").set(null);
         }
         
         if (Object.keys(finishedData).length > 0) {
             await db.ref("finished_matches").set(finishedData);
-            console.log(`Update ${Object.keys(finishedData).length} hasil (finished).`);
         } else {
-            // Jika tidak ada data finished sama sekali, hapus node finished di Firebase
             await db.ref("finished_matches").set(null);
         }
         
         process.exit(0);
     } catch (error) {
-        console.error("Error fetching daily fixtures:", error.message);
+        console.error(error.message);
         process.exit(1);
     }
 }
-
 fetchDailyFixtures();
