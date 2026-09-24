@@ -2,49 +2,90 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-const databaseURL = process.env.FIREBASE_DB_URL;
-const apiKey = process.env.API_FOOTBALL_KEY;
-
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  databaseURL: databaseURL
+  databaseURL: process.env.FIREBASE_DB_URL
 });
 const db = admin.database();
 
-async function updateScores() {
+async function fetchLiveFixtures() {
     try {
         const response = await axios.get('https://api.football-data.org/v4/matches?status=IN_PLAY,PAUSED', {
-            headers: { 'X-Auth-Token': apiKey }
+            headers: { 'X-Auth-Token': process.env.API_FOOTBALL_KEY }
         });
+
+        const apiMatches = response.data.matches || [];
         
-        const matches = response.data.matches;
+        // Fetch current live matches from Firebase to compare states
+        const snapshot = await db.ref('matches/live').once('value');
+        const currentLiveMatches = snapshot.val() || {};
         
-        if (!matches || matches.length === 0) {
-            await db.ref("live_matches").set(null);
-            return process.exit(0);
+        const updates = {};
+        const priorityLeagues = [
+            "UEFA Champions League", "Premier League", "Primera Division",
+            "Serie A", "Bundesliga", "Ligue 1", "Campeonato Brasileiro Série A",
+            "Eredivisie", "Primeira Liga", "Championship"
+        ];
+
+        let hasNewLiveMatch = false;
+        let newMatchTitle = "";
+        let newMatchBody = "";
+
+        for (const match of apiMatches) {
+            const leagueName = match.competition.name;
+            
+            if (priorityLeagues.includes(leagueName)) {
+                const matchId = match.id.toString();
+                
+                // If this match wasn't in Firebase live matches previously, it JUST started!
+                if (!currentLiveMatches[matchId]) {
+                    hasNewLiveMatch = true;
+                    newMatchTitle = "🔴 Laga Baru Saja Dimulai!";
+                    newMatchBody = `${match.homeTeam.name} vs ${match.awayTeam.name} (${leagueName})`;
+                }
+
+                updates[matchId] = {
+                    id: match.id,
+                    league: leagueName,
+                    home_team: match.homeTeam.name,
+                    away_team: match.awayTeam.name,
+                    home_logo: match.homeTeam.crest,
+                    away_logo: match.awayTeam.crest,
+                    home_goals: match.score.fullTime.home ?? match.score.halfTime.home ?? 0,
+                    away_goals: match.score.fullTime.away ?? match.score.halfTime.away ?? 0,
+                    status: match.status,
+                    elapsed: 0,
+                    timestamp: new Date(match.utcDate).getTime()
+                };
+            }
         }
-        
-        const liveScoresData = {};
-        matches.forEach(match => {
-            liveScoresData[match.id] = {
-                league: match.competition.name,
-                home_team: match.homeTeam.name,
-                home_logo: match.homeTeam.crest || "", // Mapping logo crest
-                home_goals: (match.score && match.score.fullTime && match.score.fullTime.home !== null) ? match.score.fullTime.home : 0,
-                away_team: match.awayTeam.name,
-                away_logo: match.awayTeam.crest || "", // Mapping logo crest
-                away_goals: (match.score && match.score.fullTime && match.score.fullTime.away !== null) ? match.score.fullTime.away : 0,
-                status: match.status,
-                elapsed: match.minute ? match.minute : 0,
-                timestamp: new Date(match.utcDate).getTime() 
+
+        await db.ref('matches/live').set(updates);
+        console.log(`Sukses update ${Object.keys(updates).length} live matches`);
+
+        // Send Push Notification if a new match started
+        if (hasNewLiveMatch) {
+            const message = {
+                notification: {
+                    title: newMatchTitle,
+                    body: newMatchBody
+                },
+                topic: 'live_matches'
             };
-        });
-        
-        await db.ref("live_matches").set(liveScoresData);
-        process.exit(0);
+            try {
+                await admin.messaging().send(message);
+                console.log('Notifikasi terkirim:', newMatchTitle);
+            } catch (error) {
+                console.error('Gagal mengirim notifikasi:', error);
+            }
+        }
+
     } catch (error) {
-        console.error(error.message);
-        process.exit(1);
+        console.error("Error fetching live matches:", error.message);
+    } finally {
+        process.exit(0);
     }
 }
-updateScores();
+
+fetchLiveFixtures();
+
