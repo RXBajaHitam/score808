@@ -29,11 +29,13 @@ async function updateScores() {
             liveScoresData[match.id] = {
                 league: match.competition.name,
                 home_team: match.homeTeam.name,
+                home_logo: match.homeTeam.crest || "", // Mapping logo crest
                 home_goals: (match.score && match.score.fullTime && match.score.fullTime.home !== null) ? match.score.fullTime.home : 0,
                 away_team: match.awayTeam.name,
+                away_logo: match.awayTeam.crest || "", // Mapping logo crest
                 away_goals: (match.score && match.score.fullTime && match.score.fullTime.away !== null) ? match.score.fullTime.away : 0,
                 status: match.status,
-                elapsed: match.minute ? match.minute : 0, // Fix: Pastikan elapsed harus tipe integer
+                elapsed: match.minute ? match.minute : 0,
                 timestamp: new Date(match.utcDate).getTime() 
             };
         });
