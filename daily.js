@@ -10,28 +10,28 @@ const db = admin.database();
 
 async function fetchDailyFixtures() {
     try {
-                const todayObj = new Date();
+        const todayObj = new Date();
         
-        // Cari dari 7 hari ke belakang (untuk hasil / Finished)
+        // Ambil dari 3 hari ke belakang (untuk results)
         const pastDateObj = new Date();
-        pastDateObj.setDate(todayObj.getDate() - 7);
-        const past7Days = pastDateObj.toISOString().split('T')[0];
+        pastDateObj.setDate(todayObj.getDate() - 3);
+        const past3Days = pastDateObj.toISOString().split('T')[0];
         
-        // Cari sampai 7 hari ke depan (untuk jadwal / Upcoming)
+        // Ambil sampai 7 hari ke depan (untuk jadwal/upcoming)
         const futureDateObj = new Date();
         futureDateObj.setDate(todayObj.getDate() + 7);
         const future7Days = futureDateObj.toISOString().split('T')[0];
         
-        // Gunakan dateFrom=past7Days dan dateTo=future7Days
-        const response = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${past7Days}&dateTo=${future7Days}`, {
+        console.log(`Mengambil data dari ${past3Days} hingga ${future7Days}`);
+        
+        // Endpoint tanpa spesifikasi &competitions untuk mengambil SEMUA liga gratis
+        const response = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${past3Days}&dateTo=${future7Days}`, {
             headers: { 'X-Auth-Token': process.env.API_FOOTBALL_KEY }
         });
 
-
-
         const matches = response.data.matches;
         if (!matches || matches.length === 0) {
-            console.log("Tidak ada jadwal/hasil.");
+            console.log("Tidak ada jadwal/hasil yang didapat dari range waktu tersebut.");
             return process.exit(0);
         }
 
@@ -49,7 +49,7 @@ async function fetchDailyFixtures() {
                 away_team: match.awayTeam.name,
                 away_goals: (match.score && match.score.fullTime && match.score.fullTime.away !== null) ? match.score.fullTime.away : 0,
                 status: status,
-                timestamp: new Date(match.utcDate).getTime() // Fix: Mengirim timestamp dalam format milisecond agar sesuai dengan Kotlin
+                timestamp: new Date(match.utcDate).getTime()
             };
             
             if (['SCHEDULED', 'TIMED', 'POSTPONED'].includes(status)) { 
@@ -62,20 +62,23 @@ async function fetchDailyFixtures() {
 
         if (Object.keys(upcomingData).length > 0) {
             await db.ref("upcoming_matches").set(upcomingData);
+            console.log(`Berhasil update ${Object.keys(upcomingData).length} jadwal (upcoming).`);
         } else {
             await db.ref("upcoming_matches").set(null);
         }
         
         if (Object.keys(finishedData).length > 0) {
             await db.ref("finished_matches").set(finishedData);
+            console.log(`Berhasil update ${Object.keys(finishedData).length} hasil (finished).`);
         } else {
             await db.ref("finished_matches").set(null);
         }
         
         process.exit(0);
     } catch (error) {
-        console.error(error.message);
+        console.error("Error fetching daily fixtures:", error.response ? error.response.data : error.message);
         process.exit(1);
     }
 }
+
 fetchDailyFixtures();
