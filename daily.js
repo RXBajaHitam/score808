@@ -10,15 +10,23 @@ const db = admin.database();
 
 async function fetchDailyFixtures() {
     try {
-        const todayObj = new Date();
-        const today = todayObj.toISOString().split('T')[0];
+                const todayObj = new Date();
+        
+        // Cari dari 7 hari ke belakang (untuk hasil / Finished)
         const pastDateObj = new Date();
         pastDateObj.setDate(todayObj.getDate() - 7);
         const past7Days = pastDateObj.toISOString().split('T')[0];
         
-        const response = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${past7Days}&dateTo=${today}`, {
-    headers: { 'X-Auth-Token': process.env.API_FOOTBALL_KEY }
-});
+        // Cari sampai 7 hari ke depan (untuk jadwal / Upcoming)
+        const futureDateObj = new Date();
+        futureDateObj.setDate(todayObj.getDate() + 7);
+        const future7Days = futureDateObj.toISOString().split('T')[0];
+        
+        // Gunakan dateFrom=past7Days dan dateTo=future7Days
+        const response = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${past7Days}&dateTo=${future7Days}`, {
+            headers: { 'X-Auth-Token': process.env.API_FOOTBALL_KEY }
+        });
+
 
 
         const matches = response.data.matches;
