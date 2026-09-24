@@ -53,14 +53,21 @@ async function fetchDailyFixtures() {
             }
         });
 
+        // Menggunakan .set() untuk me-replace seluruh data agar sisa data lama benar-benar tertimpa/terhapus
         if (Object.keys(upcomingData).length > 0) {
-            await db.ref("upcoming_matches").update(upcomingData);
+            await db.ref("upcoming_matches").set(upcomingData);
             console.log(`Update ${Object.keys(upcomingData).length} jadwal (upcoming).`);
+        } else {
+            // Jika tidak ada data upcoming sama sekali, hapus node upcoming di Firebase
+            await db.ref("upcoming_matches").set(null);
         }
         
         if (Object.keys(finishedData).length > 0) {
-            await db.ref("finished_matches").update(finishedData);
+            await db.ref("finished_matches").set(finishedData);
             console.log(`Update ${Object.keys(finishedData).length} hasil (finished).`);
+        } else {
+            // Jika tidak ada data finished sama sekali, hapus node finished di Firebase
+            await db.ref("finished_matches").set(null);
         }
         
         process.exit(0);
@@ -69,4 +76,5 @@ async function fetchDailyFixtures() {
         process.exit(1);
     }
 }
+
 fetchDailyFixtures();
