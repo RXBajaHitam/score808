@@ -1,19 +1,27 @@
 name: Update Daily Fixtures
+
 on:
   schedule:
-    - cron: '0 0,12 * * *' # Berjalan setiap 6 jam
-  workflow_dispatch:
+    - cron: '0 */6 * * *' # Berjalan setiap 6 jam sekali
+  workflow_dispatch: # Mengizinkan eksekusi manual (tombol Run)
 
 jobs:
-  update-daily:
+  run-daily-script:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
           node-version: '18'
-      - run: npm install
-      - env:
+          
+      - name: Install Dependencies
+        run: npm install axios firebase-admin
+        
+      - name: Run daily.js (Upcoming & Finished Matches)
+        env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
