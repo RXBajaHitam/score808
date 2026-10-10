@@ -11,8 +11,11 @@ const db = admin.database();
 const apiKey = process.env.API_FOOTBALL_KEY;
 const headers = { 'X-Auth-Token': apiKey };
 
-// 2021: Premier League, 2014: La Liga, 2019: Serie A, 2002: Bundesliga, 2015: Ligue 1, 2001: UCL
-const comps = '2021,2014,2019,2002,2015,2001';
+// 12 Free Tier Competitions:
+// 2000: World Cup, 2001: UCL, 2002: Bundesliga, 2003: Eredivisie, 2013: Brasileiro Série A,
+// 2014: La Liga, 2015: Ligue 1, 2016: Championship, 2017: Primeira Liga,
+// 2018: Euro, 2019: Serie A, 2021: Premier League
+const comps = '2000,2001,2002,2003,2013,2014,2015,2016,2017,2018,2019,2021';
 
 function formatDate(date) {
     return date.toISOString().split('T')[0];
