@@ -2,7 +2,7 @@ name: Update Daily Fixtures
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # Berjalan setiap 6 jam sekali
+    - cron: '*/5 * * * *' # Berjalan setiap 5 menit sekali
   workflow_dispatch: # Mengizinkan eksekusi manual (tombol Run)
 
 jobs:
