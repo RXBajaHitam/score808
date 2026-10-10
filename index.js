@@ -8,96 +8,87 @@ admin.initializeApp({
 });
 const db = admin.database();
 
-const apiKey = process.env.API_FOOTBALL_KEY;
-const headers = { 'X-Auth-Token': apiKey };
-
-// 12 Free Tier Competitions:
-// 2000: World Cup, 2001: UCL, 2002: Bundesliga, 2003: Eredivisie, 2013: Brasileiro Série A,
-// 2014: La Liga, 2015: Ligue 1, 2016: Championship, 2017: Primeira Liga,
-// 2018: Euro, 2019: Serie A, 2021: Premier League
-const comps = '2000,2001,2002,2003,2013,2014,2015,2016,2017,2018,2019,2021';
-
-function formatDate(date) {
-    return date.toISOString().split('T')[0];
-}
-
-async function fetchDailyFixtures() {
+async function fetchLiveFixtures() {
     try {
-        const todayObj = new Date();
-        const todayStr = formatDate(todayObj);
-        
-        // 10 Hari ke belakang (untuk history)
-        const pastDateObj = new Date();
-        pastDateObj.setDate(todayObj.getDate() - 10);
-        const past10Days = formatDate(pastDateObj);
-        
-        // 10 Hari ke depan (untuk jadwal)
-        const futureDateObj = new Date();
-        futureDateObj.setDate(todayObj.getDate() + 10);
-        const future10Days = formatDate(futureDateObj);
-        
-        console.log(`Mengambil Results: ${past10Days} hingga ${todayStr}`);
-        const resFinished = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${past10Days}&dateTo=${todayStr}&competitions=${comps}`, { headers });
-        
-        console.log(`Mengambil Upcoming: ${todayStr} hingga ${future10Days}`);
-        const resUpcoming = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${todayStr}&dateTo=${future10Days}&competitions=${comps}`, { headers });
-
-        const allMatches = [...(resFinished.data.matches || []), ...(resUpcoming.data.matches || [])];
-        
-        // Hapus duplikasi jika ada match di hari "today" yang terambil 2 kali
-        const uniqueMatchesMap = new Map();
-        allMatches.forEach(m => uniqueMatchesMap.set(m.id, m));
-        const matches = Array.from(uniqueMatchesMap.values());
-
-        const upcomingData = {};
-        const finishedData = {};
-
-        matches.forEach(match => {
-            const fixtureId = match.id;
-            const status = match.status; 
-            
-            const matchObj = {
-                league: match.competition.name,
-                home_team: match.homeTeam.name,
-                home_logo: match.homeTeam.crest || "", // Logo
-                home_goals: (match.score && match.score.fullTime && match.score.fullTime.home !== null) ? match.score.fullTime.home : 0,
-                away_team: match.awayTeam.name,
-                away_logo: match.awayTeam.crest || "", // Logo
-                away_goals: (match.score && match.score.fullTime && match.score.fullTime.away !== null) ? match.score.fullTime.away : 0,
-                status: status,
-                timestamp: new Date(match.utcDate).getTime()
-            };
-            
-            if (['SCHEDULED', 'TIMED', 'POSTPONED'].includes(status)) { 
-                upcomingData[fixtureId] = matchObj; 
-            } 
-            else if (['FINISHED', 'AWARDED'].includes(status)) { 
-                finishedData[fixtureId] = matchObj; 
-            }
+        // Menggunakan status=LIVE yang direkomendasikan API v4
+        const response = await axios.get('https://api.football-data.org/v4/matches?status=LIVE', {
+            headers: { 'X-Auth-Token': process.env.API_FOOTBALL_KEY }
         });
 
-        // Update Firebase dan timpa data lama secara paksa
-        if (Object.keys(upcomingData).length > 0) {
-            await db.ref("upcoming_matches").set(upcomingData);
-            console.log(`Berhasil update ${Object.keys(upcomingData).length} jadwal (upcoming).`);
-        } else {
-            await db.ref("upcoming_matches").set(null);
-            console.log("Tidak ada upcoming matches.");
-        }
+        const apiMatches = response.data.matches || [];
         
-        if (Object.keys(finishedData).length > 0) {
-            await db.ref("finished_matches").set(finishedData);
-            console.log(`Berhasil update ${Object.keys(finishedData).length} hasil (finished).`);
+        const snapshot = await db.ref('matches/live').once('value');
+        const currentLiveMatches = snapshot.val() || {};
+        
+        const updates = {};
+        
+        // Menggunakan ID Kompetisi (12 Free Tier)
+        const priorityLeagueIds = [
+            2000, 2001, 2002, 2003, 2013, 2014, 
+            2015, 2016, 2017, 2018, 2019, 2021
+        ];
+
+        let hasNewLiveMatch = false;
+        let newMatchTitle = "";
+        let newMatchBody = "";
+
+        for (const match of apiMatches) {
+            const leagueId = match.competition.id;
+            const leagueName = match.competition.name;
+            
+            if (priorityLeagueIds.includes(leagueId)) {
+                const matchId = match.id.toString();
+                
+                if (!currentLiveMatches[matchId]) {
+                    hasNewLiveMatch = true;
+                    newMatchTitle = "🔴 Laga Baru Saja Dimulai!";
+                    newMatchBody = `${match.homeTeam.name} vs ${match.awayTeam.name} (${leagueName})`;
+                }
+
+                updates[matchId] = {
+                    id: match.id,
+                    league: leagueName,
+                    home_team: match.homeTeam.name,
+                    away_team: match.awayTeam.name,
+                    home_logo: match.homeTeam.crest,
+                    away_logo: match.awayTeam.crest,
+                    home_goals: match.score.fullTime.home ?? match.score.halfTime.home ?? 0,
+                    away_goals: match.score.fullTime.away ?? match.score.halfTime.away ?? 0,
+                    status: match.status,
+                    elapsed: 0,
+                    timestamp: new Date(match.utcDate).getTime()
+                };
+            }
+        }
+
+        // Fix: Pastikan object dikirim sebagai null jika tidak ada laga live untuk menghapus node lama
+        if (Object.keys(updates).length > 0) {
+            await db.ref('matches/live').set(updates);
+            console.log(`Sukses update ${Object.keys(updates).length} live matches`);
         } else {
-            await db.ref("finished_matches").set(null);
-            console.log("Tidak ada finished matches.");
+            await db.ref('matches/live').set(null);
+            console.log(`Tidak ada laga live saat ini. Data dikosongkan.`);
+        }
+
+        if (hasNewLiveMatch) {
+            const message = {
+                notification: { title: newMatchTitle, body: newMatchBody },
+                topic: 'live_matches'
+            };
+            try {
+                await admin.messaging().send(message);
+                console.log('Notifikasi terkirim:', newMatchTitle);
+            } catch (error) {
+                console.error('Gagal mengirim notifikasi:', error);
+            }
         }
         
         process.exit(0);
+
     } catch (error) {
-        console.error("Error fetching daily fixtures:", error.response ? error.response.data : error.message);
-        process.exit(1);
+        console.error("Error fetching live matches:", error.response ? error.response.data : error.message);
+        process.exit(1); // Ubah jadi 1 agar Github Actions berwarna Merah jika terjadi limit API
     }
 }
 
-fetchDailyFixtures();
+fetchLiveFixtures();
