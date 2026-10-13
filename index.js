@@ -52,7 +52,7 @@ async function fetchLiveFixtures() {
                 }
 
                 updates[matchId] = {
-                    id: match.id,
+                    id: match.id.toString(),
                     league: leagueName,
                     home_team: match.homeTeam.name,
                     away_team: match.awayTeam.name,

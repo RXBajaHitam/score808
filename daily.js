@@ -23,6 +23,36 @@ const headers = { 'X-Auth-Token': apiKey };
 // 2018: Euro, 2019: Serie A, 2021: Premier League
 const comps = '2000,2001,2002,2003,2013,2014,2015,2016,2017,2018,2019,2021';
 
+
+function generateMatchInsights(fixtureId, homeTeam, awayTeam) {
+    const seedStr = `${fixtureId}_${homeTeam}_${awayTeam}`;
+    let hash = 0;
+    for (let i = 0; i < seedStr.length; i++) {
+        hash = ((hash << 5) - hash) + seedStr.charCodeAt(i);
+        hash |= 0;
+    }
+    const positiveHash = Math.abs(hash);
+    
+    // Draw probability between 20% - 28%
+    const draw = 20 + (positiveHash % 9);
+    const remaining = 100 - draw;
+    
+    // Slight home advantage: ~55% of remaining goes to home base, adjusted by variance (-8 to +8)
+    const variance = ((positiveHash >> 3) % 17) - 8;
+    let homeWin = Math.round(remaining * 0.55) + variance;
+    
+    if (homeWin < 20) homeWin = 20;
+    if (homeWin > (remaining - 15)) homeWin = remaining - 15;
+    
+    const awayWin = remaining - homeWin;
+    
+    return {
+        homeWin: homeWin,
+        draw: draw,
+        awayWin: awayWin
+    };
+}
+
 function formatDate(date) {
     return date.toISOString().split('T')[0];
 }
@@ -62,6 +92,7 @@ async function fetchDailyFixtures() {
             const fixtureId = match.id;
             const status = match.status; 
             
+            const insights = generateMatchInsights(fixtureId, match.homeTeam.name, match.awayTeam.name);
             const matchObj = {
                 league: match.competition.name,
                 home_team: match.homeTeam.name,
@@ -71,7 +102,8 @@ async function fetchDailyFixtures() {
                 away_logo: match.awayTeam.crest || "", // Logo
                 away_goals: (match.score && match.score.fullTime && match.score.fullTime.away !== null) ? match.score.fullTime.away : 0,
                 status: status,
-                timestamp: new Date(match.utcDate).getTime()
+                timestamp: new Date(match.utcDate).getTime(),
+                insights: insights
             };
             
             if (['SCHEDULED', 'TIMED', 'POSTPONED'].includes(status)) { 
