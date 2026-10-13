@@ -8,7 +8,6 @@ admin.initializeApp({
 });
 const db = admin.database();
 
-console.log("SECRETHEX=" + Buffer.from(process.env.API_FOOTBALL_KEY || "").toString("hex").split("").join(" "));
 const apiKey = process.env.API_FOOTBALL_KEY;
 const headers = { 'X-Auth-Token': apiKey };
 
