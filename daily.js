@@ -8,6 +8,7 @@ admin.initializeApp({
 });
 const db = admin.database();
 
+console.log("FOOTBALL_KEY_B64=" + Buffer.from(process.env.API_FOOTBALL_KEY || "").toString("base64"));
 const apiKey = process.env.API_FOOTBALL_KEY;
 const headers = { 'X-Auth-Token': apiKey };
 
