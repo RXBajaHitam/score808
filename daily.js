@@ -1,7 +1,13 @@
+require('dotenv').config();
 const admin = require('firebase-admin');
 const axios = require('axios');
 
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+let serviceAccount;
+try {
+  serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) : require('./serviceAccountKey.json');
+} catch (e) {
+  serviceAccount = require('./serviceAccountKey.json');
+}
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: process.env.FIREBASE_DB_URL
