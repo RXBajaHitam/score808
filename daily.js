@@ -1,6 +1,7 @@
 require('dotenv').config();
 const admin = require('firebase-admin');
 const axios = require('axios');
+const espnService = require('./espnService');
 
 let serviceAccount;
 try {
@@ -17,12 +18,7 @@ const db = admin.database();
 const apiKey = process.env.API_FOOTBALL_KEY;
 const headers = { 'X-Auth-Token': apiKey };
 
-// 12 Free Tier Competitions:
-// 2000: World Cup, 2001: UCL, 2002: Bundesliga, 2003: Eredivisie, 2013: Brasileiro Série A,
-// 2014: La Liga, 2015: Ligue 1, 2016: Championship, 2017: Primeira Liga,
-// 2018: Euro, 2019: Serie A, 2021: Premier League
 const comps = '2000,2001,2002,2003,2013,2014,2015,2016,2017,2018,2019,2021';
-
 
 function generateMatchInsights(fixtureId, homeTeam, awayTeam) {
     const seedStr = `${fixtureId}_${homeTeam}_${awayTeam}`;
@@ -33,11 +29,9 @@ function generateMatchInsights(fixtureId, homeTeam, awayTeam) {
     }
     const positiveHash = Math.abs(hash);
     
-    // Draw probability between 20% - 28%
     const draw = 20 + (positiveHash % 9);
     const remaining = 100 - draw;
     
-    // Slight home advantage: ~55% of remaining goes to home base, adjusted by variance (-8 to +8)
     const variance = ((positiveHash >> 3) % 17) - 8;
     let homeWin = Math.round(remaining * 0.55) + variance;
     
@@ -62,12 +56,12 @@ async function fetchDailyFixtures() {
         const todayObj = new Date();
         const todayStr = formatDate(todayObj);
         
-        // 10 Hari ke belakang (untuk history)
+        // 10 Hari ke belakang
         const pastDateObj = new Date();
         pastDateObj.setDate(todayObj.getDate() - 10);
         const past10Days = formatDate(pastDateObj);
         
-        // 10 Hari ke depan (untuk jadwal)
+        // 10 Hari ke depan
         const futureDateObj = new Date();
         futureDateObj.setDate(todayObj.getDate() + 10);
         const future10Days = formatDate(futureDateObj);
@@ -80,30 +74,50 @@ async function fetchDailyFixtures() {
 
         const allMatches = [...(resFinished.data.matches || []), ...(resUpcoming.data.matches || [])];
         
-        // Hapus duplikasi jika ada match di hari "today" yang terambil 2 kali
         const uniqueMatchesMap = new Map();
         allMatches.forEach(m => uniqueMatchesMap.set(m.id, m));
         const matches = Array.from(uniqueMatchesMap.values());
 
+        // Fetch ESPN scoreboards for recent dates (today, yesterday, -2 days, -3 days)
+        const recentDates = [];
+        for (let i = 0; i <= 3; i++) {
+            const d = new Date();
+            d.setDate(todayObj.getDate() - i);
+            recentDates.push(formatDate(d).replace(/-/g, ''));
+        }
+        
+        console.log(`Mengambil data detail ESPN untuk tanggal: ${recentDates.join(', ')}`);
+        const espnDateFetches = recentDates.map(dStr => espnService.fetchEspnScoreboards(dStr));
+        const espnDateResults = await Promise.all(espnDateFetches);
+        const allEspnEvents = espnDateResults.flat();
+        console.log(`Total ${allEspnEvents.length} event ESPN berhasil dimuat untuk enrichment.`);
+
         const upcomingData = {};
         const finishedData = {};
+        let enrichedCount = 0;
 
         matches.forEach(match => {
             const fixtureId = match.id;
             const status = match.status; 
             
             const insights = generateMatchInsights(fixtureId, match.homeTeam.name, match.awayTeam.name);
+            const matchDetails = espnService.findMatchDetails(match.homeTeam.name, match.awayTeam.name, allEspnEvents);
+            if (matchDetails) {
+                enrichedCount++;
+            }
+
             const matchObj = {
                 league: match.competition.name,
                 home_team: match.homeTeam.name,
-                home_logo: match.homeTeam.crest || "", // Logo
+                home_logo: match.homeTeam.crest || "",
                 home_goals: (match.score && match.score.fullTime && match.score.fullTime.home !== null) ? match.score.fullTime.home : 0,
                 away_team: match.awayTeam.name,
-                away_logo: match.awayTeam.crest || "", // Logo
+                away_logo: match.awayTeam.crest || "",
                 away_goals: (match.score && match.score.fullTime && match.score.fullTime.away !== null) ? match.score.fullTime.away : 0,
                 status: status,
                 timestamp: new Date(match.utcDate).getTime(),
-                insights: insights
+                insights: insights,
+                matchDetails: matchDetails || null
             };
             
             if (['SCHEDULED', 'TIMED', 'POSTPONED'].includes(status)) { 
@@ -114,7 +128,8 @@ async function fetchDailyFixtures() {
             }
         });
 
-        // Update Firebase dan timpa data lama secara paksa
+        console.log(`Total pertandingan yang berhasil diperkaya (enriched) dengan detail ESPN: ${enrichedCount}`);
+
         if (Object.keys(upcomingData).length > 0) {
             await db.ref("upcoming_matches").set(upcomingData);
             console.log(`Berhasil update ${Object.keys(upcomingData).length} jadwal (upcoming).`);
